@@ -193,6 +193,7 @@ extern int           POT_GPU_NPGROUP;
 extern bool          OPT__OUTPUT_POT, OPT__GRA_P5_GRADIENT, OPT__SELF_GRAVITY, OPT__GRAVITY_EXTRA_MASS;
 extern double        SOR_OMEGA;
 extern int           SOR_MAX_ITER, SOR_MIN_ITER;
+extern int           POT_STENCIL_ORDER;
 extern double        MG_TOLERATED_ERROR;
 extern int           MG_MAX_ITER, MG_NPRE_SMOOTH, MG_NPOST_SMOOTH;
 extern char          EXT_POT_TABLE_NAME[MAX_STRING];

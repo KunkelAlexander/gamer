@@ -1583,6 +1583,19 @@ void Aux_Check_Parameter()
    if ( SOR_MIN_ITER < 3 )    Aux_Error( ERROR_INFO, "SOR_MIN_ITER (%d) < 3 !!\n", SOR_MIN_ITER );
 #  endif
 
+   if ( POT_STENCIL_ORDER != 2  &&  POT_STENCIL_ORDER != 4 )
+      Aux_Error( ERROR_INFO, "POT_STENCIL_ORDER (%d) must be 2 or 4 !!\n", POT_STENCIL_ORDER );
+
+#  if ( POT_SCHEME != SOR )
+   if ( POT_STENCIL_ORDER != 2 )
+      Aux_Error( ERROR_INFO, "POT_STENCIL_ORDER = %d is only supported by the SOR Poisson solver !!\n", POT_STENCIL_ORDER );
+#  endif
+
+#  if ( defined GPU  &&  defined FLOAT8 )
+   if ( POT_STENCIL_ORDER != 2 )
+      Aux_Error( ERROR_INFO, "POT_STENCIL_ORDER = %d is not supported by the GPU Poisson solver with FLOAT8 !!\n", POT_STENCIL_ORDER );
+#  endif
+
 #  if ( POT_SCHEME == MG )
    if ( MG_MAX_ITER < 0 )              Aux_Error( ERROR_INFO, "MG_MAX_ITER (%d) < 0 !!\n", MG_MAX_ITER );
    if ( MG_NPRE_SMOOTH < 0 )           Aux_Error( ERROR_INFO, "MG_NPRE_SMOOTH (%d) < 0 !!\n", MG_NPRE_SMOOTH );
