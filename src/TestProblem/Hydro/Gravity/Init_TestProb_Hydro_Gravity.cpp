@@ -11,7 +11,10 @@ typedef int DensProf_t;
 const DensProf_t
    DENSPROF_NFW       = 1,
    DENSPROF_HERNQUIST = 2,
-   DENSPROF_PLUMMER   = 3;    // smooth (non-cuspy) profile: rho = Dens0*(1+s^2)^(-5/2), phi = -G*M/sqrt(r^2+r0^2)
+   DENSPROF_PLUMMER   = 3,
+   DENSPROF_SINE      = 4;    // periodic test (set OPT__BC_POT=1): rho = Dens0*(1+0.5*sin(kx)sin(ky)sin(kz)), k=2*pi/Radius0
+                              // --> Radius0 must divide the box size; phi = -4*pi*G*0.5*Dens0*sin(kx)sin(ky)sin(kz)/(3k^2)
+;    // smooth (non-cuspy) profile: rho = Dens0*(1+s^2)^(-5/2), phi = -G*M/sqrt(r^2+r0^2)
 
 static DensProf_t Gra_DensProf;     // density profile
 static double     Gra_Radius0;      // radius  parameter for the adopted density profile
@@ -125,7 +128,7 @@ void LoadInputTestProb( const LoadParaMode_t load_mode, ReadPara_t *ReadPara, HD
 // ************************************************************************************************************************
 // LOAD_PARA( load_mode, "KEY_IN_THE_FILE",   &VARIABLE,              DEFAULT,       MIN,              MAX               );
 // ************************************************************************************************************************
-   LOAD_PARA( load_mode, "Gra_DensProf",      &Gra_DensProf,          2,             1,                3                 );
+   LOAD_PARA( load_mode, "Gra_DensProf",      &Gra_DensProf,          2,             1,                4                 );
    LOAD_PARA( load_mode, "Gra_Radius0",       &Gra_Radius0,           1.0,           Eps_double,       NoMax_double      );
    LOAD_PARA( load_mode, "Gra_Dens0",         &Gra_Dens0,             1.0,           Eps_double,       NoMax_double      );
    LOAD_PARA( load_mode, "Gra_NIterPerf",     &Gra_NIterPerf,         0,             0,                NoMax_int         );
@@ -262,6 +265,13 @@ void SetGridIC( real fluid[], const double x, const double y, const double z, co
          fluid[DENS] = Gra_Dens0 * pow( 1.0 + s*s, -2.5 );
          break;
 
+      case DENSPROF_SINE :
+      {
+         const double kk = 2.0*M_PI/Gra_Radius0;
+         fluid[DENS] = Gra_Dens0 * ( 1.0 + 0.5*sin(kk*x)*sin(kk*y)*sin(kk*z) );
+      }
+      break;
+
       default :
          Aux_Error( ERROR_INFO, "unsupported density profile (Gra_DensProf = %d) !!\n", Gra_DensProf );
          exit( -1 );
@@ -341,6 +351,13 @@ void OutputError()
 //                M = 4*pi/3*Dens0*Radius0^3
                   anal = -NEWTON_G * (4.0*M_PI/3.0*Gra_Dens0*CUBE(Gra_Radius0)) / ( Gra_Radius0*sqrt(1.0+s*s) );
                   break;
+
+               case DENSPROF_SINE :
+               {
+                  const double kk = 2.0*M_PI/Gra_Radius0;
+                  anal = -4.0*M_PI*NEWTON_G*0.5*Gra_Dens0*sin(kk*x)*sin(kk*y)*sin(kk*z) / ( 3.0*kk*kk );
+               }
+               break;
 
                default :
                   Aux_Error( ERROR_INFO, "unsupported density profile (Gra_DensProf = %d) !!\n", Gra_DensProf );
