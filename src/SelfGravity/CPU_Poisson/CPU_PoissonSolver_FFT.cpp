@@ -81,7 +81,13 @@ void FFT_Periodic( real *RhoK, const real Poi_Coeff, const int j_start, const in
 
 
 //       this form is more consistent with the "second-order discrete" Laplacian operator
-         Deno = -4.0 * ( sinkx2[i] + sinky2[j] + sinkz2[k] );
+         if ( POT_STENCIL_ORDER == 4 )
+//          symbol of the 13-point 4th-order operator, -4*sum_d( s_d + s_d^2/3 ) with s_d = sin^2(k_d/2)
+//          --> consistent with the 4th-order stencil of the SOR solver on the refined levels
+            Deno = -4.0 * (  sinkx2[i] + SQR(sinkx2[i])/3.0 + sinky2[j] + SQR(sinky2[j])/3.0
+                           + sinkz2[k] + SQR(sinkz2[k])/3.0  );
+         else
+            Deno = -4.0 * ( sinkx2[i] + sinky2[j] + sinkz2[k] );
 //       Deno = -( kx[i]*kx[i] + ky[j]*ky[j] + kz[k]*kz[k] );
 
 
