@@ -11,7 +11,7 @@ __global__ void CUPOT_PoissonSolver_SOR( const real g_Rho_Array    [][ RHO_NXT*R
                                          const real g_Pot_Array_In [][ POT_NXT*POT_NXT*POT_NXT ],
                                                real g_Pot_Array_Out[][ GRA_NXT*GRA_NXT*GRA_NXT ],
                                          const int Min_Iter, const int Max_Iter, const real Omega_6,
-                                         const real Const, const IntScheme_t IntScheme );
+                                         const real Const, const IntScheme_t IntScheme, const int StencilOrder );
 
 #elif ( POT_SCHEME == MG  )
 __global__ void CUPOT_PoissonSolver_MG( const real g_Rho_Array    [][ RHO_NXT*RHO_NXT*RHO_NXT ],
@@ -403,7 +403,8 @@ void CUAPI_Asyn_PoissonGravitySolver( const real h_Rho_Array    [][RHO_NXT][RHO_
                                     ( d_Rho_Array_P     + UsedPatch[s],
                                       d_Pot_Array_P_In  + UsedPatch[s],
                                       d_Pot_Array_P_Out + UsedPatch[s],
-                                      SOR_Min_Iter, SOR_Max_Iter, SOR_Omega_6, Poi_Const, IntScheme );
+                                      SOR_Min_Iter, SOR_Max_Iter, SOR_Omega_6, Poi_Const, IntScheme,
+                                      POT_STENCIL_ORDER );
 
 #           elif ( POT_SCHEME == MG  )
 

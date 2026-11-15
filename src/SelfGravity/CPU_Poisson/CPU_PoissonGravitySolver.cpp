@@ -10,7 +10,8 @@ void CPU_PoissonSolver_SOR( const real Rho_Array    [][RHO_NXT][RHO_NXT][RHO_NXT
                             const real Pot_Array_In [][POT_NXT][POT_NXT][POT_NXT],
                                   real Pot_Array_Out[][GRA_NXT][GRA_NXT][GRA_NXT],
                             const int NPatchGroup, const real dh, const int Min_Iter, const int Max_Iter,
-                            const real Omega, const real Poi_Coeff, const IntScheme_t IntScheme );
+                            const real Omega, const real Poi_Coeff, const IntScheme_t IntScheme,
+                            const int StencilOrder );
 
 #elif ( POT_SCHEME == MG  )
 void CPU_PoissonSolver_MG( const real Rho_Array    [][RHO_NXT][RHO_NXT][RHO_NXT],
@@ -181,7 +182,7 @@ void CPU_PoissonGravitySolver( const real h_Rho_Array    [][RHO_NXT][RHO_NXT][RH
 
          CPU_PoissonSolver_SOR( h_Rho_Array, h_Pot_Array_In, h_Pot_Array_Out, NPatchGroup, dh,
                                 SOR_Min_Iter, SOR_Max_Iter, SOR_Omega,
-                                Poi_Coeff, IntScheme );
+                                Poi_Coeff, IntScheme, POT_STENCIL_ORDER );
 
 #        elif ( POT_SCHEME == MG  )
 

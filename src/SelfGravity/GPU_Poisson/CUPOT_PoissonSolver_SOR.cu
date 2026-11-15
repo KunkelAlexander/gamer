@@ -41,6 +41,36 @@
 
 
 
+// 4th-order Laplacian by deferred correction (POT_STENCIL_ORDER = 4)
+// --> the 13-point 4th-order operator is  L4 = L2 - (1/12)*(D4x + D4y + D4z),  where D4 is the 4th difference
+//     (f[+2] - 4*f[+1] + 6*f[0] - 4*f[-1] + f[-2]) and L2 is the usual 7-point operator
+// --> the SOR sweep below always solves  L2 phi = Const*rho + (1/12)*sum(D4 phi_old)  with the red-black ordering,
+//     which stays valid because only the +-1 neighbours are used. The correction term is re-evaluated
+//     from the current potential POT_FD4_NCORR times and stored in s_Rho_Array (as rho + correction/Const)
+// --> the +-2 neighbours require two frozen boundary layers, so only the inner (RHO_NXT-2)^3 cells are updated
+#ifdef SOR_RHO_SHARED
+#  define POT_FD4_NCORR  3
+
+//-------------------------------------------------------------------------------------------------------
+// Function    :  SOR_FPotAddr
+// Description :  Address in the shared-memory array s_FPot of the cell (x,y,z) of the POT_NXT_F^3 array,
+//                taking into account the padding (the same layout as the interpolation step uses)
+//-------------------------------------------------------------------------------------------------------
+__device__ __forceinline__
+uint SOR_FPotAddr( const uint x, const uint y, const uint z )
+{
+#  ifdef SOR_USE_PADDING
+   const uint pad = ( y < 3 ) ? 0 : POT_PAD*( (y-3)/4 + 1 );
+   return pad + z*( POT_NXT_F*POT_NXT_F + POT_PAD*4 ) + y*POT_NXT_F + x;
+#  else
+   return z*POT_NXT_F*POT_NXT_F + y*POT_NXT_F + x;
+#  endif
+}
+#endif // #ifdef SOR_RHO_SHARED
+
+
+
+
 //-------------------------------------------------------------------------------------------------------
 // Function    :  CUPOT_PoissonSolver_SOR
 // Description :  GPU Poisson solver using the SOR scheme
@@ -100,13 +130,16 @@
 //                                  --> currently supported schemes include
 //                                      INT_CQUAD : conservative quadratic interpolation
 //                                      INT_QUAD  : quadratic interpolation
+//                StencilOrder    : Order of the Laplacian (2 or 4; 4 requires SOR_RHO_SHARED, see above)
 //---------------------------------------------------------------------------------------------------
 __global__ void CUPOT_PoissonSolver_SOR( const real g_Rho_Array    [][ RHO_NXT*RHO_NXT*RHO_NXT ],
                                          const real g_Pot_Array_In [][ POT_NXT*POT_NXT*POT_NXT ],
                                                real g_Pot_Array_Out[][ GRA_NXT*GRA_NXT*GRA_NXT ],
                                          const int Min_Iter, const int Max_Iter, const real Omega_6,
-                                         const real Const, const IntScheme_t IntScheme )
+                                         const real Const, const IntScheme_t IntScheme, const int StencilOrder )
 {
+
+   const bool Fd4 = ( StencilOrder == 4 );
 
    const uint bid       = blockIdx.x;
    const uint tid_x     = threadIdx.x;
@@ -347,7 +380,47 @@ __global__ void CUPOT_PoissonSolver_SOR( const real g_Rho_Array    [][ RHO_NXT*R
 
 
 // c. use the SOR scheme to evaluate potential
+//    (for the 4th-order stencil: repeat the SOR solve with the deferred-correction source term refreshed)
 // -----------------------------------------------------------------------------------------------------------
+#  ifdef SOR_RHO_SHARED
+   const int NOuter = ( Fd4 ) ? 1 + POT_FD4_NCORR : 1;
+#  else
+   const int NOuter = 1;
+#  endif
+
+   for (int Outer=0; Outer<NOuter; Outer++)
+   {
+
+#  ifdef SOR_RHO_SHARED
+   if ( Outer > 0 )
+   {
+//    c0. evaluate the correction term (1/12)*sum(D4 phi) with the current potential and add it to the source
+      const real InvConst = (real)1.0 / Const;
+      const real Const_12 = (real)( 1.0/12.0 );
+      const uint N4       = RHO_NXT - 2;
+
+      for (uint t=ID; t<N4*N4*N4; t+=POT_NTHREAD)
+      {
+         const uint x = 2 + t % N4;
+         const uint y = 2 + ( t / N4 ) % N4;
+         const uint z = 2 + t / ( N4*N4 );
+         const uint C = SOR_FPotAddr( x, y, z );
+
+         const real D4x = s_FPot[C+2] - (real)4.0*s_FPot[C+1] - (real)4.0*s_FPot[C-1] + s_FPot[C-2];
+         const real D4y = s_FPot[SOR_FPotAddr(x,y+2,z)] - (real)4.0*s_FPot[SOR_FPotAddr(x,y+1,z)]
+                        - (real)4.0*s_FPot[SOR_FPotAddr(x,y-1,z)] + s_FPot[SOR_FPotAddr(x,y-2,z)];
+         const real D4z = s_FPot[SOR_FPotAddr(x,y,z+2)] - (real)4.0*s_FPot[SOR_FPotAddr(x,y,z+1)]
+                        - (real)4.0*s_FPot[SOR_FPotAddr(x,y,z-1)] + s_FPot[SOR_FPotAddr(x,y,z-2)];
+         const real Corr = Const_12 * ( D4x + D4y + D4z + (real)18.0*s_FPot[C] );
+
+         const uint R = (z-1)*RHO_NXT*RHO_NXT + (y-1)*RHO_NXT + (x-1);
+
+         s_Rho_Array[R] = g_Rho_Array[bid][R] + InvConst*Corr;
+      }
+      __syncthreads();
+   }
+#  endif // #ifdef SOR_RHO_SHARED
+
    Residual_Total_Old = __FLT_MAX__;
 
    for (uint Iter=0; Iter<Max_Iter; Iter++)
@@ -375,15 +448,22 @@ __global__ void CUPOT_PoissonSolver_SOR( const real g_Rho_Array    [][ RHO_NXT*R
             km = DispPotID - pad_dz;
 
 
-//          evaluate the residual
-            Residual = (  s_FPot[kp] + s_FPot[km] + s_FPot[jp] + s_FPot[jm] + s_FPot[ip] + s_FPot[im]
-                          - (real)6.0*s_FPot[DispPotID] - Const*s_Rho_Array[DispRhoID]  );
+//          for the 4th-order stencil, the outermost cell layer of the density array is also kept fixed (as boundary)
+//          --> the unsigned subtraction maps indices 1 ... RHO_NXT-2 to 0 ... RHO_NXT-3
+            const uint Xc = ( tid_x << 1 ) + Disp;
 
-//          update potential
-            s_FPot[DispPotID] += Omega_6*Residual;
+            if (  !Fd4  ||  ( Xc-1 < RHO_NXT-2  &&  tid_y-1 < RHO_NXT-2  &&  z-1 < RHO_NXT-2 )  )
+            {
+//             evaluate the residual
+               Residual = (  s_FPot[kp] + s_FPot[km] + s_FPot[jp] + s_FPot[jm] + s_FPot[ip] + s_FPot[im]
+                             - (real)6.0*s_FPot[DispPotID] - Const*s_Rho_Array[DispRhoID]  );
 
-//          store the sum of the residuals evaluated by the same thread in a per-thread register
-            Residual_ThreadSum += FABS( Residual );
+//             update potential
+               s_FPot[DispPotID] += Omega_6*Residual;
+
+//             store the sum of the residuals evaluated by the same thread in a per-thread register
+               Residual_ThreadSum += FABS( Residual );
+            }
 
             PotID += dPotID;
             RhoID += dRhoID;
@@ -424,6 +504,8 @@ __global__ void CUPOT_PoissonSolver_SOR( const real g_Rho_Array    [][ RHO_NXT*R
       __syncthreads();
 
    } // for (uint Iter=0; Iter<Max_Iter; Iter++)
+
+   } // for (int Outer=0; Outer<NOuter; Outer++)
 
 
 // d. store potential back to the global memory

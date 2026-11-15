@@ -149,7 +149,7 @@ __global__ void CUPOT_PoissonSolver_SOR( const real g_Rho_Array    [][ CUBE(RHO_
                                          const real g_Pot_Array_In [][ CUBE(POT_NXT) ],
                                                real g_Pot_Array_Out[][ CUBE(GRA_NXT) ],
                                          const int Min_Iter, const int Max_Iter, const real Omega_6,
-                                         const real Const, const IntScheme_t IntScheme );
+                                         const real Const, const IntScheme_t IntScheme, const int StencilOrder );
 #elif ( POT_SCHEME == MG )
 __global__ void CUPOT_PoissonSolver_MG( const real g_Rho_Array    [][ CUBE(RHO_NXT) ],
                                         const real g_Pot_Array_In [][ CUBE(POT_NXT) ],

@@ -31,13 +31,23 @@
 //                                 --> currently supported schemes include
 //                                     INT_CQUAD : conservative quadratic interpolation
 //                                     INT_QUAD  : quadratic interpolation
+//                StencilOrder : Order of the Laplacian (2 or 4)
+//                               --> 4: the 13-point 4th-order operator L4 = L2 - (1/12)*sum(D4) is solved by deferred
+//                                  correction: L2 phi = Const*rho + (1/12)*sum(D4 phi_old), with the correction
+//                                  refreshed POT_FD4_NCORR times. The +-2 neighbours require two frozen boundary
+//                                  layers, so the outermost layer of the density array is not updated (same as
+//                                  the GPU kernel CUPOT_PoissonSolver_SOR)
 //-------------------------------------------------------------------------------------------------------
 void CPU_PoissonSolver_SOR( const real Rho_Array    [][RHO_NXT][RHO_NXT][RHO_NXT],
                             const real Pot_Array_In [][POT_NXT][POT_NXT][POT_NXT],
                                   real Pot_Array_Out[][GRA_NXT][GRA_NXT][GRA_NXT],
                             const int NPatchGroup, const real dh, const int Min_Iter, const int Max_Iter,
-                            const real Omega, const real Poi_Coeff, const IntScheme_t IntScheme )
+                            const real Omega, const real Poi_Coeff, const IntScheme_t IntScheme,
+                            const int StencilOrder )
 {
+
+   const bool Fd4         = ( StencilOrder == 4 );
+   const int  POT_FD4_NCORR = 3;    // number of times the deferred-correction term is refreshed
 
    const int  NPatch    = NPatchGroup*8;
    const real Const     = Poi_Coeff*dh*dh;
@@ -56,6 +66,9 @@ void CPU_PoissonSolver_SOR( const real Rho_Array    [][RHO_NXT][RHO_NXT][RHO_NXT
 
 //    array to store the interpolated "fine-grid" potential (as the initial guess and the B.C.)
       real (*Pot_Array_Int)[POT_NXT_INT][POT_NXT_INT] = new real [POT_NXT_INT][POT_NXT_INT][POT_NXT_INT];
+
+//    array to store the source term (density + correction/Const) of the 4th-order stencil
+      real (*Src)[RHO_NXT][RHO_NXT] = ( Fd4 ) ? new real [RHO_NXT][RHO_NXT][RHO_NXT] : NULL;
 
 
 //    loop over all patches
@@ -198,6 +211,41 @@ void CPU_PoissonSolver_SOR( const real Rho_Array    [][RHO_NXT][RHO_NXT][RHO_NXT
 
 //       b. use the SOR scheme to evaluate potential (store in the Pot_Array_Int array)
 // ------------------------------------------------------------------------------------------------------------
+         const real (*RhoUse)[RHO_NXT][RHO_NXT] = ( Fd4 ) ? (const real (*)[RHO_NXT][RHO_NXT])Src : Rho_Array[P];
+
+         for (int Outer=0; Outer<( (Fd4) ? 1+POT_FD4_NCORR : 1 ); Outer++)
+         {
+
+         if ( Fd4 )
+         {
+//          source term: the density at Outer=0, density + deferred correction/Const afterwards
+            for (int k=0; k<RHO_NXT; k++)
+            for (int j=0; j<RHO_NXT; j++)
+            for (int i=0; i<RHO_NXT; i++)    Src[k][j][i] = Rho_Array[P][k][j][i];
+
+            if ( Outer > 0 )
+            {
+               const real InvConst = (real)1.0 / Const;
+               const real Const_12 = (real)( 1.0/12.0 );
+               const int  O        = 1 + POT_USELESS;     // Pot_Array_Int index = density index + O
+
+               for (int k=1; k<RHO_NXT-1; k++)  {  const int kc = k + O;
+               for (int j=1; j<RHO_NXT-1; j++)  {  const int jc = j + O;
+               for (int i=1; i<RHO_NXT-1; i++)  {  const int ic = i + O;
+
+                  const real *p = &Pot_Array_Int[kc][jc][ic];
+                  const real  D4x = p[+2] - (real)4.0*p[+1] - (real)4.0*p[-1] + p[-2];
+                  const real  D4y = Pot_Array_Int[kc][jc+2][ic] - (real)4.0*Pot_Array_Int[kc][jc+1][ic]
+                                  - (real)4.0*Pot_Array_Int[kc][jc-1][ic] + Pot_Array_Int[kc][jc-2][ic];
+                  const real  D4z = Pot_Array_Int[kc+2][jc][ic] - (real)4.0*Pot_Array_Int[kc+1][jc][ic]
+                                  - (real)4.0*Pot_Array_Int[kc-1][jc][ic] + Pot_Array_Int[kc-2][jc][ic];
+
+                  Src[k][j][i] += InvConst * Const_12 * ( D4x + D4y + D4z + (real)18.0*(*p) );
+
+               }}}
+            } // if ( Outer > 0 )
+         } // if ( Fd4 )
+
          Residual_Total_Old = __FLT_MAX__;
 
          for (Iter=0; Iter<Max_Iter; Iter++)
@@ -230,10 +278,14 @@ void CPU_PoissonSolver_SOR( const real Rho_Array    [][RHO_NXT][RHO_NXT][RHO_NXT
                         ii = i-1-POT_USELESS;
 
 //                      evaluate the residual of potential
+//                      (for the 4th-order stencil, the outermost layer of the density array is kept fixed)
+                        if (  Fd4  &&  ( ii < 1  ||  ii > RHO_NXT-2  ||  jj < 1  ||  jj > RHO_NXT-2  ||
+                                         kk < 1  ||  kk > RHO_NXT-2 )  )    continue;
+
                         Residual = (             Pot_Array_Int[kp][j ][i ] + Pot_Array_Int[km][j ][i ]
                                      +           Pot_Array_Int[k ][jp][i ] + Pot_Array_Int[k ][jm][i ]
                                      +           Pot_Array_Int[k ][j ][ip] + Pot_Array_Int[k ][j ][im]
-                                     - (real)6.0*Pot_Array_Int[k ][j ][i ] - Const*Rho_Array[P][kk][jj][ii]  );
+                                     - (real)6.0*Pot_Array_Int[k ][j ][i ] - Const*RhoUse[kk][jj][ii]  );
 
 //                      update potential
                         Pot_Array_Int[k][j][i] += Omega_6*Residual;
@@ -269,6 +321,9 @@ void CPU_PoissonSolver_SOR( const real Rho_Array    [][RHO_NXT][RHO_NXT][RHO_NXT
          } // for (int Iter=0; Iter<Max_Iter; Iter++)
 
 
+         } // for (int Outer=0; ...)
+
+
          if ( Iter == Max_Iter )
             Aux_Message( stderr, "WARNING : Rank = %2d, Patch %6d exceeds Max_Iter in the SOR iteration !!\n",
                          MPI_Rank, P );
@@ -288,6 +343,7 @@ void CPU_PoissonSolver_SOR( const real Rho_Array    [][RHO_NXT][RHO_NXT][RHO_NXT
 
 
       delete [] Pot_Array_Int;
+      delete [] Src;
 
    } // OpenMP parallel region
 
