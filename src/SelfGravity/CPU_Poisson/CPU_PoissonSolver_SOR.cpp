@@ -58,6 +58,8 @@ void CPU_PoissonSolver_SOR( const real Rho_Array    [][RHO_NXT][RHO_NXT][RHO_NXT
    const real Mp[3]     = { (real)-3.0/32.0, (real)+30.0/32.0, (real)+5.0/32.0 };
    const real Mm[3]     = { (real)+5.0/32.0, (real)+30.0/32.0, (real)-3.0/32.0 };
 
+   double G_max_f = 0.0, G_max_r2 = 0.0, G_max_r4 = 0.0;   // for the optional diagnostic GAMER_POT_DEBUG
+
 #  pragma omp parallel
    {
       int i_start, i_start_pass, i_start_k;     // i_start_(pass,k) : record the i_start in the (pass,k) loop
@@ -329,6 +331,44 @@ void CPU_PoissonSolver_SOR( const real Rho_Array    [][RHO_NXT][RHO_NXT][RHO_NXT
                          MPI_Rank, P );
 
 
+//       b2. optional diagnostic (run-time environment variable GAMER_POT_DEBUG): residuals of the 2nd- and 4th-order
+//           discrete Poisson equations on the cells at least two cells inside the fixed boundary, relative to the
+//           largest source term. A converged solution has ~1e-6 (float) for the operator it solves
+// ------------------------------------------------------------------------------------------------------------
+         if ( getenv("GAMER_POT_DEBUG") != NULL )
+         {
+            double max_f = 0.0, max_r2 = 0.0, max_r4 = 0.0;
+            const int O = 1 + POT_USELESS;
+
+            for (int k=2; k<RHO_NXT-2; k++)  {  const int kc = k + O;
+            for (int j=2; j<RHO_NXT-2; j++)  {  const int jc = j + O;
+            for (int i=2; i<RHO_NXT-2; i++)  {  const int ic = i + O;
+
+               const double c0  = Pot_Array_Int[kc][jc][ic];
+               const double sx1 = Pot_Array_Int[kc][jc][ic+1] + Pot_Array_Int[kc][jc][ic-1];
+               const double sy1 = Pot_Array_Int[kc][jc+1][ic] + Pot_Array_Int[kc][jc-1][ic];
+               const double sz1 = Pot_Array_Int[kc+1][jc][ic] + Pot_Array_Int[kc-1][jc][ic];
+               const double sx2 = Pot_Array_Int[kc][jc][ic+2] + Pot_Array_Int[kc][jc][ic-2];
+               const double sy2 = Pot_Array_Int[kc][jc+2][ic] + Pot_Array_Int[kc][jc-2][ic];
+               const double sz2 = Pot_Array_Int[kc+2][jc][ic] + Pot_Array_Int[kc-2][jc][ic];
+               const double L2  = sx1 + sy1 + sz1 - 6.0*c0;
+               const double L4  = ( 16.0*(sx1+sy1+sz1) - (sx2+sy2+sz2) - 90.0*c0 ) / 12.0;
+               const double f   = (double)Const * Rho_Array[P][k][j][i];
+
+               if ( FABS(f)         > max_f  )   max_f  = FABS(f);
+               if ( FABS(L2-f)      > max_r2 )   max_r2 = FABS(L2-f);
+               if ( FABS(L4-f)      > max_r4 )   max_r4 = FABS(L4-f);
+            }}}
+
+#           pragma omp critical
+            {
+               if ( max_f  > G_max_f  )   G_max_f  = max_f;
+               if ( max_r2 > G_max_r2 )   G_max_r2 = max_r2;
+               if ( max_r4 > G_max_r4 )   G_max_r4 = max_r4;
+            }
+         }
+
+
 //       c. copy data : Pot_Array_Int --> Pot_Array_Out
 // ------------------------------------------------------------------------------------------------------------
          for (int k=0; k<GRA_NXT; k++)    {  K = k + POT_GHOST_SIZE + POT_USELESS - GRA_GHOST_SIZE;
@@ -346,6 +386,10 @@ void CPU_PoissonSolver_SOR( const real Rho_Array    [][RHO_NXT][RHO_NXT][RHO_NXT
       delete [] Src;
 
    } // OpenMP parallel region
+
+   if ( getenv("GAMER_POT_DEBUG") != NULL  &&  NPatch > 0 )
+      Aux_Message( stderr, "POT_DEBUG order=%d  max|f|=%13.6e  max|L2phi-f|=%13.6e  max|L4phi-f|=%13.6e  (NPatch=%d)\n",
+                   StencilOrder, G_max_f, G_max_r2, G_max_r4, NPatch );
 
 } // FUNCTION : CPU_PoissonSolver_SOR
 
