@@ -424,6 +424,7 @@ void Init_Load_Parameter()
    ReadPara->Add( "SOR_MAX_ITER",               &SOR_MAX_ITER,                   -1,               NoMin_int,     NoMax_int      );
    ReadPara->Add( "SOR_MIN_ITER",               &SOR_MIN_ITER,                   -1,               NoMin_int,     NoMax_int      );
    ReadPara->Add( "POT_STENCIL_ORDER",          &POT_STENCIL_ORDER,               2,               2,             4              );
+   ReadPara->Add( "POT_FFT_SYMBOL",             &POT_FFT_SYMBOL,                  0,               0,             3              );
 // do not check MG_XXX since they may be reset by Init_Set_Default_MG_Parameter()
    ReadPara->Add( "MG_MAX_ITER",                &MG_MAX_ITER,                    -1,               NoMin_int,     NoMax_int      );
    ReadPara->Add( "MG_NPRE_SMOOTH",             &MG_NPRE_SMOOTH,                 -1,               NoMin_int,     NoMax_int      );

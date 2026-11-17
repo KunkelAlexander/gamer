@@ -81,7 +81,23 @@ void FFT_Periodic( real *RhoK, const real Poi_Coeff, const int j_start, const in
 
 
 //       this form is more consistent with the "second-order discrete" Laplacian operator
-         if ( POT_STENCIL_ORDER == 4 )
+         if ( POT_FFT_SYMBOL == 1 )
+//          exact continuous symbol -k^2 (k in units of 1/base-level cell)
+            Deno = -( SQR(kx[i]) + SQR(ky[j]) + SQR(kz[k]) );
+         else if ( POT_FFT_SYMBOL >= 2 )
+         {
+//          symbol of the finest-level (MAX_LEVEL) operator, expressed in units of 1/base-level-cell^2
+//          2: 2nd-order stencil, 3: 4th-order stencil
+            const real LevFac = (real)( 1 << MAX_LEVEL );
+            const real fx = SQR(  SIN( (real)0.5*kx[i]/LevFac )  );
+            const real fy = SQR(  SIN( (real)0.5*ky[j]/LevFac )  );
+            const real fz = SQR(  SIN( (real)0.5*kz[k]/LevFac )  );
+            if ( POT_FFT_SYMBOL == 2 )
+               Deno = -4.0*SQR(LevFac) * ( fx + fy + fz );
+            else
+               Deno = -4.0*SQR(LevFac) * (  fx + SQR(fx)/3.0 + fy + SQR(fy)/3.0 + fz + SQR(fz)/3.0  );
+         }
+         else if ( POT_STENCIL_ORDER == 4 )
 //          symbol of the 13-point 4th-order operator, -4*sum_d( s_d + s_d^2/3 ) with s_d = sin^2(k_d/2)
 //          --> consistent with the 4th-order stencil of the SOR solver on the refined levels
             Deno = -4.0 * (  sinkx2[i] + SQR(sinkx2[i])/3.0 + sinky2[j] + SQR(sinky2[j])/3.0

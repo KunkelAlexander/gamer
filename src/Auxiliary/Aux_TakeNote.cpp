@@ -1475,6 +1475,7 @@ void Aux_TakeNote()
       fprintf( Note, "SOR_MAX_ITER                   % d\n",      SOR_MAX_ITER            );
       fprintf( Note, "SOR_MIN_ITER                   % d\n",      SOR_MIN_ITER            );
       fprintf( Note, "POT_STENCIL_ORDER              % d\n",      POT_STENCIL_ORDER       );
+      fprintf( Note, "POT_FFT_SYMBOL                % d\n",      POT_FFT_SYMBOL          );
 #     elif ( POT_SCHEME == MG )
       fprintf( Note, "MG_MAX_ITER                    % d\n",      MG_MAX_ITER             );
       fprintf( Note, "MG_NPRE_SMOOTH                 % d\n",      MG_NPRE_SMOOTH          );

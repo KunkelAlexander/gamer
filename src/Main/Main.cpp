@@ -183,6 +183,7 @@ bool                 OPT__OUTPUT_POT, OPT__GRA_P5_GRADIENT, OPT__SELF_GRAVITY, O
 double               SOR_OMEGA;
 int                  SOR_MAX_ITER, SOR_MIN_ITER;
 int                  POT_STENCIL_ORDER;
+int                  POT_FFT_SYMBOL;
 double               MG_TOLERATED_ERROR;
 int                  MG_MAX_ITER, MG_NPRE_SMOOTH, MG_NPOST_SMOOTH;
 char                 EXT_POT_TABLE_NAME[MAX_STRING];
