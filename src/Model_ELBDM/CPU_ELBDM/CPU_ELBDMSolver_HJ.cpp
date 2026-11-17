@@ -147,6 +147,11 @@ const static double FLUX_COEFFS[ELBDM_HJ_RK_ORDER]                    = {1.0/6.0
 //     does not lead to nan in logarithm
 #define QP_DENSITY_FLOOR TINY_NUMBER
 
+// order of the spatial discretisation of the quantum pressure (2: default, 4: five-point stencils, compile-time option, e.g. -DHYBRID_QP_ORDER=4)
+#ifndef HYBRID_QP_ORDER
+#  define HYBRID_QP_ORDER 2
+#endif
+
 GPU_DEVICE
 static void CUFLU_Advance( real g_Fluid_In [][FLU_NIN ][ CUBE(HYB_NXT) ],
 #                          ifdef GAMER_DEBUG
@@ -391,11 +396,19 @@ void CUFLU_Advance(  real g_Fluid_In [][FLU_NIN  ][ CUBE(HYB_NXT) ],
                {
 
 //                compute quantum pressure
-                  const real LogRho_c   = LOG(MAX(s_In[sj][time_level][DENS][si    ], QP_DENSITY_FLOOR));
+                  const real LogRho_c   = LOG(MAX(s_In[sj][time_level][DENS][si     ], QP_DENSITY_FLOOR));
                   const real LogRho_p1  = LOG(MAX(s_In[sj][time_level][DENS][si + 1], QP_DENSITY_FLOOR));
                   const real LogRho_m1  = LOG(MAX(s_In[sj][time_level][DENS][si - 1], QP_DENSITY_FLOOR));
+#                 if ( HYBRID_QP_ORDER == 4 )
+                  // fourth-order centred gradient and Laplacian of ln(rho) (needs two cells on each side, within GHOST_ZONE_PER_STAGE)
+                  const real LogRho_p2  = LOG(MAX(s_In[sj][time_level][DENS][si + 2], QP_DENSITY_FLOOR));
+                  const real LogRho_m2  = LOG(MAX(s_In[sj][time_level][DENS][si - 2], QP_DENSITY_FLOOR));
+                  const real LogRho_Vel = real(1.0/6.0 ) * (  LogRho_m2 - 8*LogRho_m1 + 8*LogRho_p1 - LogRho_p2 );
+                  const real LogRho_Lap = real(1.0/12.0) * ( -LogRho_m2 + 16*LogRho_m1 - 30*LogRho_c + 16*LogRho_p1 - LogRho_p2 );
+#                 else
                   const real LogRho_Vel = LogRho_p1 - LogRho_m1;
                   const real LogRho_Lap = LogRho_p1 - 2 * LogRho_c + LogRho_m1;
+#                 endif
                   const real QP         = real(1.0/2.0) * LogRho_Lap  + real(1.0/16.0) * SQR(LogRho_Vel);
 
 //                compute density
@@ -438,11 +451,19 @@ void CUFLU_Advance(  real g_Fluid_In [][FLU_NIN  ][ CUBE(HYB_NXT) ],
                      real De_New, Ph_New, vp, vm, fm, fp;
 
 //                   compute quantum pressure
-                     const real LogRho_c   = LOG(MAX(s_In[sj][time_level][DENS][si    ], QP_DENSITY_FLOOR));
+                     const real LogRho_c   = LOG(MAX(s_In[sj][time_level][DENS][si     ], QP_DENSITY_FLOOR));
                      const real LogRho_p1  = LOG(MAX(s_In[sj][time_level][DENS][si + 1], QP_DENSITY_FLOOR));
                      const real LogRho_m1  = LOG(MAX(s_In[sj][time_level][DENS][si - 1], QP_DENSITY_FLOOR));
+#                    if ( HYBRID_QP_ORDER == 4 )
+                     // fourth-order centred gradient and Laplacian of ln(rho) (needs two cells on each side, within GHOST_ZONE_PER_STAGE)
+                     const real LogRho_p2  = LOG(MAX(s_In[sj][time_level][DENS][si + 2], QP_DENSITY_FLOOR));
+                     const real LogRho_m2  = LOG(MAX(s_In[sj][time_level][DENS][si - 2], QP_DENSITY_FLOOR));
+                     const real LogRho_Vel = real(1.0/6.0 ) * (  LogRho_m2 - 8*LogRho_m1 + 8*LogRho_p1 - LogRho_p2 );
+                     const real LogRho_Lap = real(1.0/12.0) * ( -LogRho_m2 + 16*LogRho_m1 - 30*LogRho_c + 16*LogRho_p1 - LogRho_p2 );
+#                    else
                      const real LogRho_Vel = LogRho_p1 - LogRho_m1;
                      const real LogRho_Lap = LogRho_p1 - 2 * LogRho_c + LogRho_m1;
+#                    endif
                      const real QP         = real(1.0/2.0) * LogRho_Lap  + real(1.0/16.0) * SQR(LogRho_Vel);
 
 //                   compute kinetic velocity
