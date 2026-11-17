@@ -1237,7 +1237,7 @@ void Aux_Check_Parameter()
 #  endif
 
 #  if ( ELBDM_SCHEME == ELBDM_HYBRID )
-#  if ( !defined( HYBRID_SCHEME )  ||  ( HYBRID_SCHEME != HYBRID_UPWIND && HYBRID_SCHEME != HYBRID_FROMM && HYBRID_SCHEME != HYBRID_MUSCL )  )
+#  if ( !defined( HYBRID_SCHEME )  ||  ( HYBRID_SCHEME != HYBRID_UPWIND && HYBRID_SCHEME != HYBRID_FROMM && HYBRID_SCHEME != HYBRID_MUSCL && HYBRID_SCHEME != HYBRID_THIRD )  )
 #     error : ERROR : HYBRID_SCHEME not defined or unsupported in ELBDM_HYBRID !!
 #  endif
 #  endif // #if ( ELBDM_SCHEME == ELBDM_HYBRID )

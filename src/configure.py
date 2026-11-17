@@ -578,11 +578,18 @@ def load_arguments( sys_setting : SystemSetting ):
                        )
 
     parser.add_argument( "--hybrid_scheme", type=str, metavar="TYPE", gamer_name="HYBRID_SCHEME", prefix="HYBRID_",
-                         default="MUSCL", choices=["UPWIND", "FROMM", "MUSCL"],
+                         default="MUSCL", choices=["UPWIND", "FROMM", "MUSCL", "THIRD"],
                          depend={"model":"ELBDM", "elbdm_scheme":"HYBRID"},
                          help="Fluid scheme for <--elbdm_scheme=HYBRID> (UPWIND: first-order, diffusive, "\
                               "FROMM: second-order, no limiter, unstable for fluid-only simulations, "\
-                              "MUSCL: second-order, with limiter, useful for zoom-in and fluid-only simulations).\n"
+                              "MUSCL: second-order, with limiter, useful for zoom-in and fluid-only simulations, "\
+                              "THIRD: third-order upwind-biased flux, falls back to MUSCL where the face value is not bounded).\n"
+                       )
+
+    parser.add_argument( "--hybrid_qp_order", type=int, metavar="INTEGER", gamer_name="HYBRID_QP_ORDER",
+                         default=2, choices=[2, 4],
+                         depend={"model":"ELBDM", "elbdm_scheme":"HYBRID"},
+                         help="Spatial order of the quantum pressure in the fluid scheme for <--elbdm_scheme=HYBRID> (2 or 4).\n"
                        )
 
     parser.add_argument( "--self_interaction", type=str2bool, metavar="BOOLEAN", gamer_name="QUARTIC_SELF_INTERACTION",

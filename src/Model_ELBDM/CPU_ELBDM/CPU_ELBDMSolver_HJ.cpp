@@ -117,6 +117,28 @@ static uint get1D2(uint k, uint j, uint i, int XYZ) {
                                    + MIN(Vb, 0) * ( Rc[t  ] - real(0.25) * ( Rc[t+1] - Rc[t-1] ) * (1.0 + Vb * _v)) )
 
 
+// Third-order upwind-biased (kappa = 1/3) face reconstruction without the Lax-Wendroff time factor of MUSCL_FM
+// --> stencil Rc[t-2 ... t+1], same as MUSCL_FM
+// --> falls back to the limited MUSCL_FM flux if the reconstructed face value is not bounded by the two adjacent cells
+GPU_DEVICE
+static real THIRD_FM_FUNC( const real *Rc, const real Vb, const int t, const real _v )
+{
+   if ( Vb == 0 )   return (real)0.0;
+
+   real Face;
+   if ( Vb > 0 )    Face = Rc[t-1] + real(1.0/6.0)*( Rc[t-1] - Rc[t-2] ) + real(1.0/3.0)*( Rc[t  ] - Rc[t-1] );
+   else             Face = Rc[t  ] - real(1.0/6.0)*( Rc[t+1] - Rc[t  ] ) - real(1.0/3.0)*( Rc[t  ] - Rc[t-1] );
+
+   const real Lo = MIN( Rc[t-1], Rc[t] );
+   const real Hi = MAX( Rc[t-1], Rc[t] );
+
+   if ( Face < Lo  ||  Face > Hi )   return MUSCL_FM( Rc, Vb, t, _v );
+
+   return Vb*Face;
+}
+# define THIRD_FM(Rc, Vb, t, _v)   THIRD_FM_FUNC( Rc, Vb, t, _v )
+
+
 # define GHOST_ZONE_PER_STAGE     2 // ghost zone per Runge-Kutta stage
 
 // Osher-Sethian flux for Hamilton-Jacobi equation
@@ -427,6 +449,10 @@ void CUFLU_Advance(  real g_Fluid_In [][FLU_NIN  ][ CUBE(HYB_NXT) ],
 //                access Rc[time_level][i, i-1, i-2], Pc[time_level][i, i-1]
                   const real fm         = MUSCL_FM (s_In[sj][time_level][DENS], _dh * vm, si    , Coeff1);
                   const real fp         = MUSCL_FM (s_In[sj][time_level][DENS], _dh * vp, si + 1, Coeff1);
+#                 elif ( HYBRID_SCHEME == HYBRID_THIRD )
+//                access Rc[time_level][i, i-1, i-2, i+1], Pc[time_level][i, i-1]
+                  const real fm         = THIRD_FM (s_In[sj][time_level][DENS], _dh * vm, si    , Coeff1);
+                  const real fp         = THIRD_FM (s_In[sj][time_level][DENS], _dh * vp, si + 1, Coeff1);
 #                 endif
 
 #                 ifdef CONSERVE_MASS
@@ -483,6 +509,10 @@ void CUFLU_Advance(  real g_Fluid_In [][FLU_NIN  ][ CUBE(HYB_NXT) ],
 //                   access Rc[time_level][i, i-1, i-2], Pc[time_level][i, i-1]
                      fm = MUSCL_FM (s_In[sj][time_level][DENS], vm, si    , Coeff1);
                      fp = MUSCL_FM (s_In[sj][time_level][DENS], vp, si + 1, Coeff1);
+#                    elif ( HYBRID_SCHEME == HYBRID_THIRD )
+//                   access Rc[time_level][i, i-1, i-2, i+1], Pc[time_level][i, i-1]
+                     fm = THIRD_FM (s_In[sj][time_level][DENS], vm, si    , Coeff1);
+                     fp = THIRD_FM (s_In[sj][time_level][DENS], vp, si + 1, Coeff1);
 #                    endif
 
 #                    ifdef CONSERVE_MASS

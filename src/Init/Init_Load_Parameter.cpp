@@ -389,6 +389,7 @@ void Init_Load_Parameter()
    ReadPara->Add( "OPT__FIXUP_ELECTRIC",        &OPT__FIXUP_ELECTRIC,             true,            Useless_bool,  Useless_bool   );
 #  endif
    ReadPara->Add( "OPT__FIXUP_RESTRICT",        &OPT__FIXUP_RESTRICT,             true,            Useless_bool,  Useless_bool   );
+   ReadPara->Add( "OPT__RESTRICT_ORDER",        &OPT__RESTRICT_ORDER,             2,               2,             4              );
 // do not check OPT__CORR_AFTER_ALL_SYNC since it may be reset by Init_ResetParameter()
    ReadPara->Add( "OPT__CORR_AFTER_ALL_SYNC",   &OPT__CORR_AFTER_ALL_SYNC,       -1,               NoMin_int,     NoMax_int      );
    ReadPara->Add( "OPT__NORMALIZE_PASSIVE",     &OPT__NORMALIZE_PASSIVE,          true,            Useless_bool,  Useless_bool   );

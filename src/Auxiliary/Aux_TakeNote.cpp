@@ -229,8 +229,13 @@ void Aux_TakeNote()
       fprintf( Note, "HYBRID_SCHEME                   FROMM\n" );
 #     elif ( HYBRID_SCHEME == HYBRID_MUSCL )
       fprintf( Note, "HYBRID_SCHEME                   MUSCL\n" );
+#     elif ( HYBRID_SCHEME == HYBRID_THIRD )
+      fprintf( Note, "HYBRID_SCHEME                   THIRD\n" );
 #     else
 #     error : ERROR : unsupported HYBRID_SCHEME !!
+#     endif
+#     ifdef HYBRID_QP_ORDER
+      fprintf( Note, "HYBRID_QP_ORDER                 %d\n", HYBRID_QP_ORDER );
 #     endif
 #     endif // #if ( ELBDM_SCHEME == ELBDM_HYBRID )
 
@@ -1370,6 +1375,7 @@ void Aux_TakeNote()
       fprintf( Note, "OPT__FIXUP_ELECTRIC            % d\n",      OPT__FIXUP_ELECTRIC      );
 #     endif
       fprintf( Note, "OPT__FIXUP_RESTRICT            % d\n",      OPT__FIXUP_RESTRICT      );
+      fprintf( Note, "OPT__RESTRICT_ORDER            % d\n",      OPT__RESTRICT_ORDER      );
 
 //    target scalars to be applied fix-up restrict operations
       if ( OPT__FIXUP_RESTRICT ) {

@@ -3,6 +3,120 @@
 
 
 
+#if ( MODEL == ELBDM )
+//-------------------------------------------------------------------------------------------------------
+// Function    :  Restrict4_Weights
+// Description :  1D weights W[i][s] for the fourth-order restriction of PS2 fine cells onto PS1 coarse cells (point values at the
+//                coarse cell centres, i.e. in between the fine cells 2i and 2i+1)
+//                --> interior: cubic Lagrange interpolation (-1, 9, 9, -1)/16 on the fine cells 2i-1 ... 2i+2
+//                --> first and last coarse cell: one-sided cubic stencils (5, 15, -5, 1)/16 and (1, -5, 15, 5)/16
+//-------------------------------------------------------------------------------------------------------
+static void Restrict4_Weights( real W[PS1][PS2] )
+{
+   for (int i=0; i<PS1; i++)
+   for (int s=0; s<PS2; s++)   W[i][s] = (real)0.0;
+
+   for (int i=1; i<PS1-1; i++)
+   {
+      W[i][2*i-1] = (real)(-1.0/16.0);
+      W[i][2*i  ] = (real)( 9.0/16.0);
+      W[i][2*i+1] = (real)( 9.0/16.0);
+      W[i][2*i+2] = (real)(-1.0/16.0);
+   }
+
+   W[0][0] = (real)( 5.0/16.0);   W[0][1] = (real)(15.0/16.0);   W[0][2] = (real)(-5.0/16.0);   W[0][3] = (real)( 1.0/16.0);
+
+   W[PS1-1][PS2-4] = (real)( 1.0/16.0);   W[PS1-1][PS2-3] = (real)(-5.0/16.0);
+   W[PS1-1][PS2-2] = (real)(15.0/16.0);   W[PS1-1][PS2-1] = (real)( 5.0/16.0);
+
+} // FUNCTION : Restrict4_Weights
+
+
+
+//-------------------------------------------------------------------------------------------------------
+// Function    :  Restrict4_Block
+// Description :  Separable fourth-order restriction of a PS2^3 block of fine cells onto the PS1^3 cells of the father patch
+//-------------------------------------------------------------------------------------------------------
+static void Restrict4_Block( real Dst[PS1][PS1][PS1], const real Src[PS2][PS2][PS2], const real W[PS1][PS2] )
+{
+   real T1[PS2][PS2][PS1], T2[PS2][PS1][PS1];
+
+// x direction
+   for (int k=0; k<PS2; k++)
+   for (int j=0; j<PS2; j++)
+   for (int i=0; i<PS1; i++)
+   {
+      real Sum = (real)0.0;
+      for (int s=0; s<PS2; s++)   if ( W[i][s] != (real)0.0 )   Sum += W[i][s]*Src[k][j][s];
+      T1[k][j][i] = Sum;
+   }
+
+// y direction
+   for (int k=0; k<PS2; k++)
+   for (int j=0; j<PS1; j++)
+   for (int i=0; i<PS1; i++)
+   {
+      real Sum = (real)0.0;
+      for (int s=0; s<PS2; s++)   if ( W[j][s] != (real)0.0 )   Sum += W[j][s]*T1[k][s][i];
+      T2[k][j][i] = Sum;
+   }
+
+// z direction
+   for (int k=0; k<PS1; k++)
+   for (int j=0; j<PS1; j++)
+   for (int i=0; i<PS1; i++)
+   {
+      real Sum = (real)0.0;
+      for (int s=0; s<PS2; s++)   if ( W[k][s] != (real)0.0 )   Sum += W[k][s]*T2[s][j][i];
+      Dst[k][j][i] = Sum;
+   }
+
+} // FUNCTION : Restrict4_Block
+
+
+
+//-------------------------------------------------------------------------------------------------------
+// Function    :  Restrict4_Gather
+// Description :  Copy variable "v" of the eight son patches SonPID0 ... SonPID0+7 into one PS2^3 block
+//-------------------------------------------------------------------------------------------------------
+static void Restrict4_Gather( real Blk[PS2][PS2][PS2], const int SonLv, const int SonPID0, const int SonFluSg, const int v )
+{
+   for (int LocalID=0; LocalID<8; LocalID++)
+   {
+      const int Ox = TABLE_02( LocalID, 'x', 0, PS1 );
+      const int Oy = TABLE_02( LocalID, 'y', 0, PS1 );
+      const int Oz = TABLE_02( LocalID, 'z', 0, PS1 );
+
+      const real (*Son)[PS1][PS1] = amr->patch[SonFluSg][SonLv][SonPID0+LocalID]->fluid[v];
+
+      for (int k=0; k<PS1; k++)
+      for (int j=0; j<PS1; j++)
+      for (int i=0; i<PS1; i++)   Blk[Oz+k][Oy+j][Ox+i] = Son[k][j][i];
+   }
+
+} // FUNCTION : Restrict4_Gather
+
+
+
+//-------------------------------------------------------------------------------------------------------
+// Function    :  Restrict4_BoxAverage
+// Description :  Box average (second-order restriction) of cell (i,j,k) of the father patch, used as positivity fallback
+//-------------------------------------------------------------------------------------------------------
+static real Restrict4_BoxAverage( const real Src[PS2][PS2][PS2], const int i, const int j, const int k )
+{
+   real Sum = (real)0.0;
+
+   for (int dk=0; dk<2; dk++)
+   for (int dj=0; dj<2; dj++)
+   for (int di=0; di<2; di++)   Sum += Src[2*k+dk][2*j+dj][2*i+di];
+
+   return (real)0.125*Sum;
+
+} // FUNCTION : Restrict4_BoxAverage
+#endif // #if ( MODEL == ELBDM )
+
+
+
 //-------------------------------------------------------------------------------------------------------
 // Function    :  Flu_FixUp_Restrict
 // Description :  Replace the data at level "FaLv" by the average data at level "FaLv+1"
@@ -146,6 +260,16 @@ void Flu_FixUp_Restrict( const int FaLv, const int SonFluSg, const int FaFluSg, 
    }
 
 
+// fourth-order restriction (ELBDM only)
+#  if ( MODEL == ELBDM )
+   const bool Res4 = ( OPT__RESTRICT_ORDER >= 4 );
+   real Res4W[PS1][PS2];
+   if ( Res4 )   Restrict4_Weights( Res4W );
+#  else
+   const bool Res4 = false;
+#  endif
+
+
 // restrict
 #  pragma omp parallel for schedule( runtime )
    for (int SonPID0=0; SonPID0<amr->NPatchComma[SonLv][1]; SonPID0+=8)
@@ -174,6 +298,113 @@ void Flu_FixUp_Restrict( const int FaLv, const int SonFluSg, const int FaFluSg, 
                     FaMagSg, FaLv, FaPID );
 #     endif
 #     endif // #ifdef GAMER_DEBUG
+
+
+//    fourth-order restriction of the fluid data (ELBDM only, OPT__RESTRICT_ORDER = 4)
+#     if ( MODEL == ELBDM )
+      if ( Res4  &&  ResFlu )
+      {
+         real (*BlkA)[PS2][PS2] = new real [PS2][PS2][PS2];   // heap: avoid large stack arrays in OpenMP threads
+         real (*BlkB)[PS2][PS2] = new real [PS2][PS2][PS2];
+         real (*BlkC)[PS2][PS2] = new real [PS2][PS2][PS2];
+         real (*DstD)[PS1][PS1] = new real [PS1][PS1][PS1];
+         real (*DstP)[PS1][PS1] = new real [PS1][PS1][PS1];
+
+         if ( ResPha )
+         {
+//          density
+            Restrict4_Gather( BlkA, SonLv, SonPID0, SonFluSg, DENS );
+            Restrict4_Block ( DstD, BlkA, Res4W );
+
+            for (int k=0; k<PS1; k++)
+            for (int j=0; j<PS1; j++)
+            for (int i=0; i<PS1; i++)
+            {
+               const real Box = Restrict4_BoxAverage( BlkA, i, j, k );
+               if ( DstD[k][j][i] <= (real)0.0  ||  DstD[k][j][i] < (real)0.5*Box )   DstD[k][j][i] = Box;
+            }
+
+//          phase: unwrap the child phases continuously over the whole block before restricting
+            Restrict4_Gather( BlkB, SonLv, SonPID0, SonFluSg, REAL );
+            Restrict4_Gather( BlkC, SonLv, SonPID0, SonFluSg, IMAG );
+
+            for (int k=0; k<PS2; k++)
+            for (int j=0; j<PS2; j++)
+            for (int i=0; i<PS2; i++)
+            {
+               const real Raw = SATAN2( BlkC[k][j][i], BlkB[k][j][i] );
+
+               if      ( i > 0 )   BlkA[k][j][i] = ELBDM_UnwrapPhase( BlkA[k][j][i-1], Raw );
+               else if ( j > 0 )   BlkA[k][j][i] = ELBDM_UnwrapPhase( BlkA[k][j-1][0], Raw );
+               else if ( k > 0 )   BlkA[k][j][i] = ELBDM_UnwrapPhase( BlkA[k-1][0][0], Raw );
+               else                BlkA[k][j][i] = Raw;
+            }
+
+            Restrict4_Block( DstP, BlkA, Res4W );
+
+            real (*DFaPtr)[PS1][PS1] = amr->patch[FaFluSg][FaLv][FaPID]->fluid[DENS];
+            real (*RFaPtr)[PS1][PS1] = amr->patch[FaFluSg][FaLv][FaPID]->fluid[REAL];
+            real (*IFaPtr)[PS1][PS1] = amr->patch[FaFluSg][FaLv][FaPID]->fluid[IMAG];
+#           if ( ELBDM_SCHEME == ELBDM_HYBRID )
+            real (*PFaPtr)   [PS1][PS1] = amr->patch[  FaFluSg][FaLv][FaPID]->fluid[PHAS];
+            real (*OldPFaPtr)[PS1][PS1] = amr->patch[1-FaFluSg][FaLv][FaPID]->fluid[PHAS];
+            if ( amr->FluSgTime[FaLv][1-FaFluSg] < 0.0 )   OldPFaPtr = PFaPtr;
+#           endif
+
+            for (int k=0; k<PS1; k++)
+            for (int j=0; j<PS1; j++)
+            for (int i=0; i<PS1; i++)
+            {
+               const real avgdens = DstD[k][j][i];
+               real       avgphase = DstP[k][j][i];
+
+#              if ( ELBDM_SCHEME == ELBDM_HYBRID )
+               if ( !amr->use_wave_flag[FaLv] && ELBDM_MATCH_PHASE )
+                  avgphase = ELBDM_UnwrapPhase( OldPFaPtr[k][j][i], avgphase );
+
+               if ( !amr->use_wave_flag[FaLv] ) {
+                  if ( TVarCC & _DENS )   DFaPtr[k][j][i] = avgdens;
+                  if ( TVarCC & _PHAS )   PFaPtr[k][j][i] = avgphase;
+               } else {
+#              endif
+                  if ( TVarCC & _DENS )   DFaPtr[k][j][i] = avgdens;
+                  if ( TVarCC & _REAL )   RFaPtr[k][j][i] = SQRT(avgdens) * COS(avgphase);
+                  if ( TVarCC & _IMAG )   IFaPtr[k][j][i] = SQRT(avgdens) * SIN(avgphase);
+#              if ( ELBDM_SCHEME == ELBDM_HYBRID )
+               } // if ( !amr->use_wave_flag[FaLv] ) ... else ...
+#              endif
+            }
+         } // if ( ResPha )
+
+//       remaining variables
+         if ( ResFlu )
+         for (int v=0; v<NFluVar; v++)
+         {
+            const int TFluVarIdx = TFluVarIdxList[v];
+            real (*FaPtr)[PS1][PS1] = amr->patch[FaFluSg][FaLv][FaPID]->fluid[TFluVarIdx];
+
+            Restrict4_Gather( BlkA, SonLv, SonPID0, SonFluSg, TFluVarIdx );
+            Restrict4_Block ( DstD, BlkA, Res4W );
+
+            for (int k=0; k<PS1; k++)
+            for (int j=0; j<PS1; j++)
+            for (int i=0; i<PS1; i++)
+            {
+               real Val = DstD[k][j][i];
+
+               if ( TFluVarIdx == DENS )
+               {
+                  const real Box = Restrict4_BoxAverage( BlkA, i, j, k );
+                  if ( Val <= (real)0.0  ||  Val < (real)0.5*Box )   Val = Box;
+               }
+
+               FaPtr[k][j][i] = Val;
+            }
+         }
+
+         delete [] BlkA;   delete [] BlkB;   delete [] BlkC;   delete [] DstD;   delete [] DstP;
+      } // if ( Res4 )
+#     endif // #if ( MODEL == ELBDM )
 
 
 //    loop over eight sons
@@ -205,7 +436,7 @@ void Flu_FixUp_Restrict( const int FaLv, const int SonFluSg, const int FaFluSg, 
 
 #        if ( MODEL == ELBDM )
 //       average phase instead of real and imaginary part if ResPha is set
-         if ( ResPha ) {
+         if ( ResPha  &&  !Res4 ) {
 
 //          D = DENS, R = REAL, I = IMAG, P = PHAS, S = STUB
             const real (*DSonPtr)  [PS1][PS1] = amr->patch[SonFluSg][SonLv][SonPID]->fluid[DENS];
@@ -271,7 +502,7 @@ void Flu_FixUp_Restrict( const int FaLv, const int SonFluSg, const int FaFluSg, 
 
 //       restrict the fluid data
 //       ELBDM: only restrict fluid data that has not yet been restricted using phase restriction
-         if ( ResFlu ) {
+         if ( ResFlu  &&  !Res4 ) {
          for (int v=0; v<NFluVar; v++)
          {
             const int TFluVarIdx = TFluVarIdxList[v];

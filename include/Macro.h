@@ -127,6 +127,7 @@
 #define HYBRID_UPWIND   1
 #define HYBRID_MUSCL    2
 #define HYBRID_FROMM    3
+#define HYBRID_THIRD    4
 
 
 // ELBDM gramfe schemes
