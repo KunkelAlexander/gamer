@@ -262,11 +262,15 @@ void Flu_FixUp_Restrict( const int FaLv, const int SonFluSg, const int FaFluSg, 
 
 // fourth-order restriction (ELBDM only)
 #  if ( MODEL == ELBDM )
-   const bool Res4 = ( OPT__RESTRICT_ORDER >= 4 );
+   const bool Res4     = ( OPT__RESTRICT_ORDER >= 3 );                                  // 3: 4th order for phase/wave function only, 4: all, 5: density only
+   const bool Res4Dens = ( OPT__RESTRICT_ORDER == 4  ||  OPT__RESTRICT_ORDER == 5 );
+   const bool Res4Pha  = ( OPT__RESTRICT_ORDER == 3  ||  OPT__RESTRICT_ORDER == 4 );
    real Res4W[PS1][PS2];
    if ( Res4 )   Restrict4_Weights( Res4W );
 #  else
-   const bool Res4 = false;
+   const bool Res4     = false;
+   const bool Res4Dens = false;
+   const bool Res4Pha  = false;
 #  endif
 
 
@@ -321,7 +325,7 @@ void Flu_FixUp_Restrict( const int FaLv, const int SonFluSg, const int FaFluSg, 
             for (int i=0; i<PS1; i++)
             {
                const real Box = Restrict4_BoxAverage( BlkA, i, j, k );
-               if ( DstD[k][j][i] <= (real)0.0  ||  DstD[k][j][i] < (real)0.5*Box )   DstD[k][j][i] = Box;
+               if ( !Res4Dens  ||  DstD[k][j][i] <= (real)0.0  ||  DstD[k][j][i] < (real)0.5*Box )   DstD[k][j][i] = Box;
             }
 
 //          phase: unwrap the child phases continuously over the whole block before restricting
@@ -341,6 +345,11 @@ void Flu_FixUp_Restrict( const int FaLv, const int SonFluSg, const int FaFluSg, 
             }
 
             Restrict4_Block( DstP, BlkA, Res4W );
+
+            if ( !Res4Pha )
+            for (int k=0; k<PS1; k++)
+            for (int j=0; j<PS1; j++)
+            for (int i=0; i<PS1; i++)   DstP[k][j][i] = Restrict4_BoxAverage( BlkA, i, j, k );
 
             real (*DFaPtr)[PS1][PS1] = amr->patch[FaFluSg][FaLv][FaPID]->fluid[DENS];
             real (*RFaPtr)[PS1][PS1] = amr->patch[FaFluSg][FaLv][FaPID]->fluid[REAL];
@@ -392,11 +401,12 @@ void Flu_FixUp_Restrict( const int FaLv, const int SonFluSg, const int FaFluSg, 
             {
                real Val = DstD[k][j][i];
 
-               if ( TFluVarIdx == DENS )
-               {
-                  const real Box = Restrict4_BoxAverage( BlkA, i, j, k );
-                  if ( Val <= (real)0.0  ||  Val < (real)0.5*Box )   Val = Box;
-               }
+               const bool IsDens = ( TFluVarIdx == DENS );
+               const bool UseBox = IsDens ? !Res4Dens : !Res4Pha;
+               const real Box    = Restrict4_BoxAverage( BlkA, i, j, k );
+
+               if ( UseBox )   Val = Box;
+               else if ( IsDens  &&  ( Val <= (real)0.0  ||  Val < (real)0.5*Box ) )   Val = Box;
 
                FaPtr[k][j][i] = Val;
             }
